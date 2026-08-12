@@ -14,8 +14,8 @@ USE_DAISYSP_LGPL = 1
 CPP_SOURCES = daisylab_synth.cpp
 
 # Library Locations
-LIBDAISY_DIR = ../../../libDaisy
-DAISYSP_DIR = ../../../DaisySP
+LIBDAISY_DIR = ../deps/libDaisy
+DAISYSP_DIR = ../deps/DaisySP
 
 # Core location, and generic Makefile.
 SYSTEM_FILES_DIR = $(LIBDAISY_DIR)/core

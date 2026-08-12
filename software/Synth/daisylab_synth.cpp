@@ -19,7 +19,7 @@ float knobValues[6];
 StringVoice   stringvoice;
 ModalVoice   modalvoice;
 ReverbSc     verb;
-int mode = 0; // 0=modalvoice 1=stringvoice 2=synth
+
 
 bool first_start=true;
 
