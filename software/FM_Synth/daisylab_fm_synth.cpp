@@ -42,7 +42,8 @@ static void AudioCallback(AudioHandle::InputBuffer  in,
     hw.ProcessDigitalControls();
 
 
-    float vlevel = knobValues[0];
+    //float vlevel = knobValues[0];
+    float vlevel = 0.5;
 
     verb.SetFeedback(.4 + (1.0 - .4) * knobValues[4]);
     verb.SetLpFreq(300 + (18000 - 300) * (1.0 - knobValues[5] * knobValues[5]));

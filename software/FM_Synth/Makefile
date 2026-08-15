@@ -6,7 +6,7 @@ USE_DAISYSP_LGPL = 1
 # APP_TYPE = BOOT_SRAM
 
 # Compiler options
-#OPT = -O1
+OPT = -O3
 #OPT=-Os
 
 

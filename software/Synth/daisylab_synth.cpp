@@ -171,7 +171,7 @@ class VoiceManager
 };
 
 
-static VoiceManager<8> voice_handler;
+static VoiceManager<20> voice_handler;
 
 
 
@@ -189,7 +189,8 @@ static void AudioCallback(AudioHandle::InputBuffer  in,
     hw.ProcessDigitalControls();
 
 
-    float vlevel = knobValues[2];
+    //float vlevel = knobValues[2];
+    float vlevel = 0.5; // placeholder
 
     if (mode == 0) {
         modalvoice.SetStructure(knobValues[0]);
