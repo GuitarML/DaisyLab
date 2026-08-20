@@ -13,12 +13,17 @@ DaisyPetal hw;
 
 int mode = 2; // 0=modalvoice 1=stringvoice 2=synth  // TODO Default to synth voice until I get cc for pads assigned
 
-float pknobValues[6];  // Currently unused
-float knobValues[6];
+//float pknobValues[6];  // Currently unused
+//float knobValues[6];
 
-StringVoice   stringvoice;
-ModalVoice   modalvoice;
+
 ReverbSc     verb;
+
+// LFO
+Oscillator      LFO_osc;
+
+// control parameters
+float Volume, Filter, LFO_Rate, Reverb_Size, Wave, SubOsc, LFO_Depth, ReverbTone, Env_Attack, Env_Decay, Env_Sustain, Env_Release;
 
 
 bool first_start=true;
@@ -38,6 +43,11 @@ class Voice
         osc_.Init(samplerate);
         osc_.SetAmp(0.75f);
         osc_.SetWaveform(Oscillator::WAVE_POLYBLEP_SAW);
+
+        sub_osc_.Init(samplerate);
+        sub_osc_.SetAmp(0.75f);
+        sub_osc_.SetWaveform(Oscillator::WAVE_POLYBLEP_SAW);
+
         env_.Init(samplerate);
         env_.SetSustainLevel(0.5f);
         env_.SetTime(ADSR_SEG_ATTACK, 0.005f);
@@ -47,6 +57,8 @@ class Voice
         filt_.SetFreq(6000.f);
         filt_.SetRes(0.6f);
         filt_.SetDrive(0.8f);
+
+        pitch_mod_ = 0.0;
     }
 
     float Process()
@@ -57,7 +69,7 @@ class Voice
             amp = env_.Process(env_gate_);
             if(!env_.IsRunning())
                 active_ = false;
-            sig = osc_.Process();
+            sig = osc_.Process() + sub_osc_.Process() * SubOsc;
             filt_.Process(sig);
             return filt_.Low() * (velocity_ / 127.f) * amp;
         }
@@ -69,6 +81,7 @@ class Voice
         note_     = note;
         velocity_ = velocity;
         osc_.SetFreq(mtof(note_));
+        sub_osc_.SetFreq(mtof(note_ - 12.0)); // TODO Do I need a negative guard here?
         active_   = true;
         env_gate_ = true;
     }
@@ -81,13 +94,31 @@ class Voice
     inline bool  IsActive() const { return active_; }
     inline float GetNote() const { return note_; }
 
+    void SetAttack(float val) { env_.SetTime(ADSR_SEG_ATTACK, val); }
+
+    void SetDecay(float val) { env_.SetTime(ADSR_SEG_DECAY, val); }
+
+    void SetSustain(float val) { env_.SetSustainLevel(val); }
+
+    void SetRelease(float val) { env_.SetTime(ADSR_SEG_RELEASE, val); }
+
+    void SetPitchMod(float val) { pitch_mod_ = val; }
+
+    void SetWave(int wave) { 
+        osc_.SetWaveform(wave);     // For now set same wave, TODO maybe do different wave for sub osciallator
+        sub_osc_.SetWaveform(wave); 
+    }
+
+
   private:
     Oscillator osc_;
+    Oscillator sub_osc_;
     Svf        filt_;
     Adsr       env_;
     float      note_, velocity_;
     bool       active_;
     bool       env_gate_;
+    float pitch_mod_;
 };
 
 template <size_t max_voices>
@@ -136,6 +167,41 @@ class VoiceManager
         }
     }
 
+    void SetAttack(float all_val)
+    {
+        for(size_t i = 0; i < max_voices; i++) {
+            voices[i].SetAttack(all_val);
+        }
+    }
+
+    void SetDecay(float all_val)
+    {
+        for(size_t i = 0; i < max_voices; i++) {
+            voices[i].SetDecay(all_val);
+        }
+    }
+
+    void SetSustain(float all_val)
+    {
+        for(size_t i = 0; i < max_voices; i++) {
+            voices[i].SetSustain(all_val);
+        }
+    }
+
+    void SetRelease(float all_val)
+    {
+        for(size_t i = 0; i < max_voices; i++) {
+            voices[i].SetRelease(all_val);
+        }
+    }
+
+    void SetPitchMod(float all_val) {
+        for(size_t i = 0; i < max_voices; i++) {
+            voices[i].SetPitchMod(all_val);
+        }
+    }
+
+
     void FreeAllVoices()
     {
         for(size_t i = 0; i < max_voices; i++)
@@ -149,6 +215,14 @@ class VoiceManager
         for(size_t i = 0; i < max_voices; i++)
         {
             voices[i].SetCutoff(all_val);
+        }
+    }
+
+    void SetWave(int all_val)
+    {
+        for(size_t i = 0; i < max_voices; i++)
+        {
+            voices[i].SetWave(all_val);
         }
     }
 
@@ -171,7 +245,7 @@ class VoiceManager
 };
 
 
-static VoiceManager<20> voice_handler;
+static VoiceManager<12> voice_handler;
 
 
 
@@ -188,43 +262,23 @@ static void AudioCallback(AudioHandle::InputBuffer  in,
     hw.ProcessAnalogControls();
     hw.ProcessDigitalControls();
 
-
-    //float vlevel = knobValues[2];
-    float vlevel = 0.5; // placeholder
-
-    if (mode == 0) {
-        modalvoice.SetStructure(knobValues[0]);
-        modalvoice.SetBrightness(knobValues[1]);
-        modalvoice.SetDamping(knobValues[3]);
-    } else if (mode == 1) {
-        stringvoice.SetStructure(knobValues[0]);
-        stringvoice.SetBrightness(knobValues[1]);
-        stringvoice.SetDamping(knobValues[3]);
-    } else {
-        voice_handler.SetCutoff(250 + knobValues[0] * (8500 -  250));
-        //voice_handler.SetSustain(knobValues[1]);
-    }
-    verb.SetFeedback(.4 + (1.0 - .4) * knobValues[4]);
-    verb.SetLpFreq(300 + (18000 - 300) * (1.0 - knobValues[5] * knobValues[5]));
     first_start=false;
+
+
 
     for(size_t i = 0; i < size; i++)
     {
 
+        float LFO_output = LFO_osc.Process() * LFO_Depth;
 
         float voice_out = 0.0;
-        if (mode == 0)
-            voice_out = modalvoice.Process();
-        else if (mode == 1) 
-            voice_out = stringvoice.Process();
-        else
-            voice_out = voice_handler.Process() * 0.5f; 
+        voice_out = voice_handler.Process() * 0.5f * (1.0 - LFO_output); 
 
 
         float wetl, wetr;
         verb.Process(voice_out, voice_out, &wetl, &wetr);
-        out[0][i] = (voice_out + wetl) * vlevel * 0.2;
-        out[1][i] = (voice_out + wetr) * vlevel * 0.2;
+        out[0][i] = (voice_out + wetl) * Volume * 0.2;
+        out[1][i] = (voice_out + wetr) * Volume * 0.2;
 
 
     }
@@ -236,31 +290,22 @@ void OnNoteOn(float notenumber, float velocity)
     if(velocity == 0.f)
     {
 
-        if (mode==2)
-            voice_handler.OnNoteOff(notenumber, velocity);
+
+        voice_handler.OnNoteOff(notenumber, velocity);
     }
     else
     {
-        if (mode==0) {
-            // Using velocity for accent setting (striking the resonator harder)
-            modalvoice.SetAccent(velocity/128.0);
-            modalvoice.SetFreq(mtof(notenumber));
-            modalvoice.Trig();
-        } else if (mode == 1) {
-            stringvoice.SetAccent(velocity/128.0);
-            stringvoice.SetFreq(mtof(notenumber));
-            stringvoice.Trig();
-        } else {
-            voice_handler.OnNoteOn(notenumber, velocity);
-        }
+
+        voice_handler.OnNoteOn(notenumber, velocity);
+
     }
 }
 
 void OnNoteOff(float notenumber, float velocity)
 {
 
-    if (mode==2)
-        voice_handler.OnNoteOff(notenumber, velocity);
+
+    voice_handler.OnNoteOff(notenumber, velocity);
 
 }
 
@@ -295,31 +340,93 @@ void HandleMidiMessage(MidiEvent m)
             switch(p.control_number)
             {   
 
-                // parameters in order: structure, brightness, level, damping, verbtime, verbdamp;
+                // parameters in order: float Volume, Filter, LFO_Rate, Reverb_Size, Wave, SubOsc, LFO_Depth, ReverbTone, Env_Attack, Env_Decay, Env_Sustain, Env_Release;
 
-                case 14:
+                case 14:  
 
-                    knobValues[0] = ((float)p.value / 127.0f);
+                    Volume = ((float)p.value / 127.0f);
                     break;
                 case 15:
 
-                    knobValues[1] = ((float)p.value / 127.0f);
+                    Filter = ((float)p.value / 127.0f);
+                    voice_handler.SetCutoff(Filter * Filter * 12000.0 + 80.0);
                     break;
                 case 16:
   
-                    knobValues[2] = ((float)p.value / 127.0f);
+                    LFO_Rate = ((float)p.value / 127.0f);
+                    LFO_osc.SetFreq(LFO_Rate * LFO_Rate * 5.0);
+
                     break;
                 case 17:
 
-                    knobValues[3] = ((float)p.value / 127.0f);
+                    Reverb_Size = ((float)p.value / 127.0f);
+                    verb.SetFeedback(.4 + (1.0 - .4) * Reverb_Size);
+
                     break;
                 case 18:
 
-                    knobValues[4] = ((float)p.value / 127.0f);
+                    Wave = ((float)p.value / 127.0f);
+
+
+                    if (Wave < 0.25) {
+                        voice_handler.SetWave(0);
+                    } else if (Wave < 0.5) {
+                        voice_handler.SetWave(5);
+                    } else if (Wave < 0.75) {
+                        voice_handler.SetWave(6);
+                    } else {
+                        voice_handler.SetWave(7);
+                    }
+                    
+/*
+    enum  // shown here for reference from DaisySP::Oscillator class
+    {
+        WAVE_SIN,
+        WAVE_TRI,
+        WAVE_SAW,
+        WAVE_RAMP,
+        WAVE_SQUARE,
+        WAVE_POLYBLEP_TRI,
+        WAVE_POLYBLEP_SAW,
+        WAVE_POLYBLEP_SQUARE,
+        WAVE_LAST,
+    };
+*/
                     break;
                 case 19:
 
-                    knobValues[5] = ((float)p.value / 127.0f);
+                    SubOsc = ((float)p.value / 127.0f); // Sets level of sub oscillator
+                    break;
+                case 20:
+
+                    LFO_Depth = ((float)p.value / 127.0f);
+                    break;
+                case 21:
+
+                    ReverbTone = ((float)p.value / 127.0f);
+                    verb.SetLpFreq(300 + (18000 - 300) * (1.0 - ReverbTone * ReverbTone));
+                    break;
+
+
+                case 22:
+  
+                    Env_Attack = ((float)p.value / 127.0f);
+                    voice_handler.SetAttack(Env_Attack); 
+                    break;
+                case 23:
+
+                    Env_Decay = ((float)p.value / 127.0f);
+                    voice_handler.SetDecay(Env_Decay); 
+                    break;
+                case 24:
+
+                    Env_Sustain = ((float)p.value / 127.0f);
+                    voice_handler.SetSustain(Env_Sustain + 0.001); 
+                    break;
+                case 25:
+
+                    Env_Release = ((float)p.value / 127.0f);
+                    voice_handler.SetRelease(Env_Release); 
                     break;
 
 
@@ -343,14 +450,28 @@ int main(void)
     hw.SetAudioBlockSize(48); 
 
 
-
-    modalvoice.Init(samplerate);
-    stringvoice.Init(samplerate);
     verb.Init(samplerate);
-
 
     voice_handler.Init(samplerate);
 
+    LFO_osc.Init(samplerate);
+    LFO_osc.SetAmp(1.0);
+    LFO_osc.SetFreq(0.5);
+    LFO_osc.SetWaveform(0); // Sine wave
+
+    // Defaults TODO is there a way to read knob positions from start up?
+    Volume = 0.5;  
+    Filter = 0.5;  
+    LFO_Rate = 0.5; 
+    Reverb_Size = 0.5;   
+    Wave = 0.5; 
+    SubOsc = 0.5; 
+    LFO_Depth = 0.5;  
+    ReverbTone = 0.5;  
+    Env_Attack = 0.5;  
+    Env_Decay = 0.5; 
+    Env_Sustain = 0.5; 
+    Env_Release = 0.5; 
 
     // Init the LEDs and set activate bypass
     //led1.Init(hw.seed.GetPin(Funbox::LED_1),false);

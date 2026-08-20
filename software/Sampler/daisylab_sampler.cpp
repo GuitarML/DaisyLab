@@ -1,22 +1,23 @@
 #include "daisy_petal.h"
 #include "daisysp.h"
 
-
+#include "piano_sample_len_480000.h"
+#include "funbox.h"
 
 using namespace daisy;
 using namespace daisysp;
-
+using namespace funbox;
 
 // Declare a local daisy_petal for hardware access  // TODO Should this be switched from petal to something else?
 DaisyPetal hw;
-//float structure, brightness, level, damping, verbtime, verbdamp, expression;
-
 
 ReverbSc     verb;
 
 #define MAX_SAMPLE static_cast<int>(48000.0 * 20.0) // 20 second sample
 #define MAX_SAMPLE_SIZET static_cast<size_t>(MAX_SAMPLE) 
 float DSY_SDRAM_BSS audioSample[3][MAX_SAMPLE_SIZET];  // three sample banks selected with pads?
+
+
 
 bool recording = false;
 
@@ -36,11 +37,16 @@ int trim1_index = 0;
 int trim2_index = 0;
 float global_voice_level = 0.5;
 
-
+float Volume = 1.0;
 
 bool first_start=true;
 
 Led led1;
+
+
+// Default sample
+// Edit header to point to qspi as shown here
+//const float DSY_QSPI_DATA default_sample[480000] = { data };
 
 /////////////////////////////////////////////////////////////  SAMPLER VOICE
 
@@ -310,8 +316,6 @@ static void AudioCallback(AudioHandle::InputBuffer  in,
     trim2_index = static_cast<int>(1.0 * current_sample_size_float);
 
 
-    float vlevel = 1.0;
-    //float vlevel = knobValues[2];
 
     //verb.SetFeedback(.4 + (1.0 - .4) * knobValues[4]);
     //verb.SetLpFreq(300 + (18000 - 300) * (1.0 - knobValues[5] * knobValues[5]));
@@ -346,8 +350,8 @@ static void AudioCallback(AudioHandle::InputBuffer  in,
         //float wetl, wetr;
         //verb.Process(voice_out, voice_out, &wetl, &wetr);
 
-        out[0][i] = sum * vlevel;
-        out[1][i] = sum * vlevel;
+        out[0][i] = sum * Volume;
+        out[1][i] = sum * Volume;
 
 
     }
@@ -390,10 +394,10 @@ void HandleMidiMessage(MidiEvent m)
 
             NoteOnEvent p = m.AsNoteOn();
   
-            if (p.note == 127) {  // Reserve 127 note for record on/off
-                recording = true;
-                //led1.Set(1.0f);
-            }
+            //if (p.note == 48) {  // Reserve 127 note for record on/off   using 48 for testing
+            //   recording = true;
+            //    led1.Set(1.0f);
+            //}
 
             OnNoteOn(p.note, p.velocity);
         }
@@ -403,12 +407,12 @@ void HandleMidiMessage(MidiEvent m)
         {
 
             NoteOffEvent p = m.AsNoteOff();
-
-            if (p.note == 127) {  // Reserve 127 note for record on/off
-                recording = false;
-                recording_sample_index = 0;
-                led1.Set(0.0f);
-            }
+            // TODO Turning off recording for now, didn't work before, fix
+            //if (p.note == 48) {  // Reserve 127 note for record on/off
+            //    recording = false;
+            //    recording_sample_index = 0;
+            //    led1.Set(0.0f);
+            //}
 
 
             OnNoteOff(p.note, p.velocity);
@@ -423,7 +427,7 @@ void HandleMidiMessage(MidiEvent m)
             {   
 
                 case 14:  
-
+                    Volume = (float)p.value / 127.0f;
 
                     break;
                 case 15:
@@ -451,13 +455,22 @@ int main(void)
 
     hw.SetAudioBlockSize(48); 
 
+    //daisy::QSPIHandle::Config qspi_config;  // TODO IS QSPI INIT NEEDED??  Maybe not, trying without first, initialized during hw.init?
+    //hw.seed.qspi.Init(qspi_config);
 
     // I dont think this is needed after moving buffer from SDRAM to SRAM TODO Verify that
     for(int i = 0; i < MAX_SAMPLE; i++) { // hard coding sample length for now
-        audioSample[0][i] = 0.;
+        if (i < 480000) { // hard coding known length of sample here (10 seconds exactly)
+            //assign default sample to first bank
+            audioSample[0][i] = mySample[i];  //assign default sample to first bank
+        } else {
+            audioSample[0][i] = 0.;
+        }
+
         audioSample[1][i] = 0.;
         audioSample[2][i] = 0.;
     }
+    current_sample_size[0] = 479999;
 
 
     verb.Init(samplerate);
@@ -467,8 +480,8 @@ int main(void)
 
 
     // Init the LEDs and set activate bypass
-    //led1.Init(hw.seed.GetPin(Funbox::LED_1),false);
-    //led1.Update();
+    led1.Init(hw.seed.GetPin(Funbox::LED_1),false);
+    led1.Update();
 
 
     hw.InitMidi();
