@@ -280,7 +280,7 @@ static void AudioCallback(AudioHandle::InputBuffer  in,
             voice_out_R = synth_voice_out + wetr;
 
         } else if (mode == 1) { // FM Synth, currently no extra effects
-            voice_out_L = voice_out_R = voice_handler_fm.Process() * 2.0f;
+            voice_out_L = voice_out_R = voice_handler_fm.Process();
 
         } else { // Sampler has reverb
             float sampler_voice_out = 0.0; // placeholder 
